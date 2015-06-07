@@ -2,15 +2,18 @@ __author__ = 'arosado'
 
 import requests
 import pymongo
+from MedNaturalLanguageProcessing import MedNaturalLanguageProcessing
 
 class WikiMedIcdInfoExtend:
     mongoClient = None
     icdDataBase = None
     wikiMedInfoDataBase = None
 
-    def 
+    def analyzeCodeInformation(self, code):
+        pass
 
     def processWikiInformationHtml(self, htmlsoup):
+        pass
 
     def processWikiSearchHtml(self, htmlsoup):
         pass
