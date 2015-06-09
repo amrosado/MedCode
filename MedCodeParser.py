@@ -61,16 +61,16 @@ class MedCodeParser:
             # diagnosisCodesRequest = self.ICD10Session.get(self.ICD10DataDiagnosisCodes)
             # diagnosisCodesHtmlSoup = bs4.BeautifulSoup(diagnosisCodesRequest.content)
             #
-            # self.crawlICD('diagnosisCodes', diagnosisCodesHtmlSoup)
-            # diagnosisCodeFile = open('icd10DiagnosisCodes.json', 'wb')
-            # json.dump(diagnosisCodeData, diagnosisCodeFile)
+            #self.crawlICD('diagnosisCodes', diagnosisCodesHtmlSoup)
+            #diagnosisCodeFile = open('icd10DiagnosisCodes.json', 'wb')
+            #json.dump(diagnosisCodeData, diagnosisCodeFile)
 
             procedureCodesRequest = self.ICD10Session.get(self.ICD10DataProcedureCodes)
             procedureCodesHtmlSoup = bs4.BeautifulSoup(procedureCodesRequest.content)
 
             self.crawlICD('procedureCodes', procedureCodesHtmlSoup)
-            # procedureCodesFile = open('icd10ProcedureCodes.json', 'wb')
-            # json.dump(procedureCodeData, procedureCodesFile)
+            # # procedureCodesFile = open('icd10ProcedureCodes.json', 'wb')
+            # # json.dump(procedureCodeData, procedureCodesFile)
 
         except:
             'Failed to setup icd parsing'
@@ -297,13 +297,19 @@ class MedCodeParser:
                                 if subSubSubSubGroupQuery != None:
                                     break
 
-
     def processHtml(self, htmlSoup):
         data = {}
         defLists = htmlSoup.find_all('ul', 'definitionList')
         deepCodesLists = htmlSoup.find_all('div', 'hierarchyMarginWrapper')
         defListLinkLists = htmlSoup.find_all('ul', 'noTopPadding')
         contentBlurbList = htmlSoup.find_all('div', 'contentBlurb')
+        dataName = htmlSoup.find('h1', 'codeIdentifier')
+        dataName2 = htmlSoup.find('h2')
+
+        data['codeIdentifier'] = dataName.text
+
+        if dataName2 != None:
+            data['codeName'] = dataName2.text
 
         defListLinksHolder = []
 
@@ -395,6 +401,13 @@ class MedCodeParser:
     def informationGrabber(self, icdUrl):
         pass
 
+    def dropAllDataCollections(self):
+        dataCollectionNames = self.mongoDb.collection_names()
+        for collectionName in dataCollectionNames:
+            if collectionName != 'system.indexes':
+                self.mongoDb.drop_collection(collectionName)
+        print('Dropped all data collections')
+
     def __init__(self):
         self.ICD10Session = requests.Session()
         try:
@@ -405,4 +418,5 @@ class MedCodeParser:
 
 
 icdParser = MedCodeParser()
+#icdParser.dropAllDataCollections()
 icdParser.initialSetup()
