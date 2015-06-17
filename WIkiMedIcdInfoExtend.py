@@ -15,24 +15,59 @@ class WikiMedIcdInfoExtend:
     icdDatabase = None
     wikiMedInfoDatabase = None
 
+    medNLP = None
+
     wikiSearchUrl = 'https://en.wikipedia.org?search='
     wikiBaseUrl = 'https://en.wikipedia.org/'
 
-    def constructWikiInformationExtension(self):
+    def reprocessIcdCodes(self):
         try:
-            mainCodeCollection = None
+            self.icdDatabase.drop_collection('processedDiagnosisCodes')
+            processedCodeCollection = self.icdDatabase.get_collection('processedDiagnosisCodes')
+
             icdDatabaseCollections = self.icdDatabase.collection_names()
             if 'hierarchydiagnosisCodes' in icdDatabaseCollections:
-                mainCodeCollection = self.icdDatabase.get_collection('hierarchydiagnosisCodes')
-                mainCodeFullCursor = mainCodeCollection.find()
-                for code in mainCodeFullCursor:
-                    codeName = code['hierarchyGroup']
-                    codeData = json.loads(code['data'])
-                    urlSearch = self.wikiSearchUrl + codeData['codeName']
-                    wikiRequest = self.wikiSession.get(urlSearch)
-                    wikiHtmlSoup = BeautifulSoup(wikiRequest.content)
-                    data = self.processWikiInformationHtml(wikiHtmlSoup)
-                    pass
+                codeCollection = self.icdDatabase.get_collection('hierarchydiagnosisCodes')
+
+                codeFullCursor = codeCollection.find()
+                for code in codeFullCursor:
+                    codeData = None
+                    codeIdentifer = code['hierarchyGroup']
+                    findProcessedCode = processedCodeCollection.find_one({'code': codeIdentifer})
+                    if findProcessedCode == None:
+                        codeData = json.loads(code['data'])
+                        processedCodeInfo = self.medNLP.breakdownCodeData(code, codeData)
+                        dump = json.dumps(processedCodeInfo)
+                        if codeData != None:
+                            processedCodeCollection.insert({'code': codeIdentifer, 'data': dump, 'codeName': codeData['codeName']})
+                            codeData = processedCodeInfo
+                            print('Reprocessed and inserted into database code: '+codeIdentifer)
+                        else:
+                            print('Could not insert reprocessed code... check program.')
+        except:
+            print('Failed to reprocess ICD 10 code information')
+
+    def constructWikiInformationExtension(self):
+        try:
+            processedCodeCollection = self.icdDatabase.get_collection('processedDiagnosisCodes')
+            wikiInfoCollection = self.wikiMedInfoDatabase.get_collection('wikiInfo')
+
+            processedCodeFullCursor = processedCodeCollection.find()
+
+            for code in processedCodeFullCursor:
+                codeData = json.loads(code['data'])
+
+                urlSearch = self.wikiSearchUrl + codeData['codeName']
+                wikiRequest = self.wikiSession.get(urlSearch)
+                wikiHtmlSoup = BeautifulSoup(wikiRequest.content)
+                data = self.processWikiInformationHtml(wikiHtmlSoup)
+
+                findWikiInfo = wikiInfoCollection.find_one({'code': codeData['data']})
+                if findWikiInfo == None:
+                    dump = json.dumps(data)
+                    if codeData != None:
+                        wikiInfoCollection.insert({'code': codeData['code'], 'data': dump, 'codeName': codeData['codeName']})
+                        pass
         except:
             'Failed to extend medical code information from wikipedia data'
 
@@ -43,6 +78,7 @@ class WikiMedIcdInfoExtend:
         wikiInfos = htmlSoup.find_all('table', 'infobox')
         contentText = htmlSoup.find('div', id='mw-content-text')
         pageTitle = htmlSoup.find('h1', id='firstHeading')
+        lastModified = htmlSoup.find('li', id='footer-info-lastmod')
         data = {}
         sectionData = {}
         sectionTextHolder = []
@@ -55,6 +91,9 @@ class WikiMedIcdInfoExtend:
 
         if len(wikiInfos) == 0:
             return None
+
+        if lastModified != None:
+            data['lastModified'] = lastModified.get_text()
 
         if wikiInfos != None:
             for wikiInfo in wikiInfos:
@@ -147,8 +186,6 @@ class WikiMedIcdInfoExtend:
 
             return data
 
-
-
     def processWikiSearchHtml(self, htmlSoup):
         htmlSoup
 
@@ -157,9 +194,11 @@ class WikiMedIcdInfoExtend:
         try:
             self.mongoClient = pymongo.MongoClient('localhost', 27017)
             self.icdDatabase = self.mongoClient.get_database('Icd10')
-            self.wikiMedInfoDataBase = self.mongoClient.get_database('WikiMedInfo')
+            self.wikiMedInfoDatabase = self.mongoClient.get_database('WikiMedInfo')
+            self.medNLP = MedNaturalLanguageProcessing(self.mongoClient)
         except:
             print('Failed to initalize mongodb database connection')
 
 wikiExtend = WikiMedIcdInfoExtend()
+wikiExtend.reprocessIcdCodes()
 wikiExtend.constructWikiInformationExtension()
