@@ -22,7 +22,7 @@ class WikiMedIcdInfoExtend:
 
     def reprocessIcdCodes(self):
         try:
-            self.icdDatabase.drop_collection('processedDiagnosisCodes')
+            #self.icdDatabase.drop_collection('processedDiagnosisCodes')
             processedCodeCollection = self.icdDatabase.get_collection('processedDiagnosisCodes')
 
             icdDatabaseCollections = self.icdDatabase.collection_names()
@@ -32,18 +32,22 @@ class WikiMedIcdInfoExtend:
                 codeFullCursor = codeCollection.find()
                 for code in codeFullCursor:
                     codeData = None
-                    codeIdentifer = code['hierarchyGroup']
-                    findProcessedCode = processedCodeCollection.find_one({'code': codeIdentifer})
-                    if findProcessedCode == None:
-                        codeData = json.loads(code['data'])
-                        processedCodeInfo = self.medNLP.breakdownCodeData(code, codeData)
-                        dump = json.dumps(processedCodeInfo)
-                        if codeData != None:
-                            processedCodeCollection.insert({'code': codeIdentifer, 'data': dump, 'codeName': codeData['codeName']})
-                            codeData = processedCodeInfo
-                            print('Reprocessed and inserted into database code: '+codeIdentifer)
-                        else:
-                            print('Could not insert reprocessed code... check program.')
+                    if 'hierarchyGroup' in code:
+                        codeIdentifier = code['hierarchyGroup']
+                        findProcessedCode = processedCodeCollection.find_one({'code': codeIdentifier})
+                        if findProcessedCode == None:
+                            codeData = json.loads(code['data'])
+                            processedCodeInfo = self.medNLP.breakdownCodeData(code, codeData)
+                            dump = json.dumps(processedCodeInfo)
+                            if codeData != None:
+                                if 'codeName' in codeData:
+                                    processedCodeCollection.insert({'code': codeIdentifier, 'data': dump, 'codeName': codeData['codeName']})
+                                    print('Reprocessed and inserted into database code: '+codeIdentifier)
+                                else:
+                                    processedCodeCollection.insert({'code': codeIdentifier, 'data': dump})
+                                    print('Reprocessed and inserted into database code: '+codeIdentifier)
+                            else:
+                                print('Could not insert reprocessed code... check program.')
         except:
             print('Failed to reprocess ICD 10 code information')
 
@@ -200,5 +204,5 @@ class WikiMedIcdInfoExtend:
             print('Failed to initalize mongodb database connection')
 
 wikiExtend = WikiMedIcdInfoExtend()
-wikiExtend.reprocessIcdCodes()
+#wikiExtend.reprocessIcdCodes()
 wikiExtend.constructWikiInformationExtension()

@@ -40,60 +40,69 @@ class MedNaturalLanguageProcessing:
             sentenceHolder = []
             typeExcludesHolder = []
 
-            for infoList in codeData['information']:
-                for infoSubList in infoList:
-                    for info in infoSubList:
-                        sentences = sentenceRe.findall(info)
-                        typeExcludesFindAll = typeExcludesRe.findall(info)
+            if 'information' in codeData:
+                for infoList in codeData['information']:
+                    for infoSubList in infoList:
+                        for info in infoSubList:
+                            sentences = sentenceRe.findall(info)
+                            typeExcludesFindAll = typeExcludesRe.findall(info)
 
-                        if clinicalData == None:
-                            clinicalDataFindAll = clinicalDataRe.findall(info)
-                            if len(clinicalDataFindAll) > 0:
+                            if clinicalData == None:
+                                clinicalDataFindAll = clinicalDataRe.findall(info)
+                                if len(clinicalDataFindAll) > 0:
+                                    newInfoList = infoList[1]
+                                    newData['clinicalInformation'] = newInfoList
+                            if diagnosisRelatedGroupData == None:
+                                diagnosisRelatedGroupFindAll = diagnosisRelatedGroupDataRe.findall(info)
+                                if len(diagnosisRelatedGroupFindAll) > 0:
+                                    newSubInfo = infoSubList[1]
+                                    newData['diagnosisRelatedGroups'] = newSubInfo
+                            if backReferencesData == None:
+                                backReferencesFindAll = backReferencesDataRe.findall(info)
+                                if len(backReferencesFindAll) > 0:
+                                    newInfoList = infoList[1]
+                                    newData['backReferences'] = newInfoList
+                            if descriptiveSynonyms == None:
+                                descriptiveSynonymsFindAll = descriptiveSynonymsRe.findall(info)
+                                if len(descriptiveSynonymsFindAll) > 0:
+                                    newInfoList = infoList[1]
+                                    newData['descriptiveSynonyms'] = newInfoList
+                            if applicableTo == None:
+                                applicableToFindAll = applicableToRe.findall(info)
+                                if len(applicableToFindAll) > 0:
+                                    newInfoList = infoList[1]
+                                    newData['applicableTo'] = newInfoList
+                            if len(typeExcludesFindAll) > 0:
                                 newInfoList = infoList[1]
-                                newData['clinicalInformation'] = newInfoList
-                        if diagnosisRelatedGroupData == None:
-                            diagnosisRelatedGroupFindAll = diagnosisRelatedGroupDataRe.findall(info)
-                            if len(diagnosisRelatedGroupFindAll) > 0:
-                                newSubInfo = infoSubList[1]
-                                newData['diagnosisRelatedGroups'] = newSubInfo
-                        if backReferencesData == None:
-                            backReferencesFindAll = backReferencesDataRe.findall(info)
-                            if len(backReferencesFindAll) > 0:
-                                newInfoList = infoList[1]
-                                newData['backReferences'] = newInfoList
-                        if descriptiveSynonyms == None:
-                            descriptiveSynonymsFindAll = descriptiveSynonymsRe.findall(info)
-                            if len(descriptiveSynonymsFindAll) > 0:
-                                newInfoList = infoList[1]
-                                newData['descriptiveSynonyms'] = newInfoList
-                        if applicableTo == None:
-                            applicableToFindAll = applicableToRe.findall(info)
-                            if len(applicableToFindAll) > 0:
-                                newInfoList = infoList[1]
-                                newData['applicableTo'] = newInfoList
-                        if len(typeExcludesFindAll) > 0:
-                            newInfoList = infoList[1]
-                            typeExcludesHolder.append([len(typeExcludesHolder)+1, newInfoList])
-                        if billable == None:
-                            notBillFindAll = notbillableRe.findall(info)
-                            billableFindAll = billableRe.findall(info)
-                            if len(notBillFindAll) > 0:
-                                newInfoList = infoList[1]
-                                newData['icdInformation'] = newInfoList
-                                billable = False
-                            else:
-                                newInfoList = infoList[1]
-                                newData['icdInformation'] = newInfoList
-                                billable = True
-                        for sentence in sentences:
-                            sentenceHolder.append(sentence)
+                                typeExcludesHolder.append([len(typeExcludesHolder)+1, newInfoList])
+                            if billable == None:
+                                notBillFindAll = notbillableRe.findall(info)
+                                billableFindAll = billableRe.findall(info)
+                                if (len(notBillFindAll) + len(billableFindAll)) > 0:
+                                    if len(notBillFindAll) > 0:
+                                        newInfoList = infoList[1]
+                                        newData['icdInformation'] = newInfoList
+                                        billable = False
+                                    else:
+                                        newInfoList = infoList[1]
+                                        newData['icdInformation'] = newInfoList
+                                        billable = True
+                            for sentence in sentences:
+                                sentenceHolder.append(sentence)
 
-            newData['code'] = code['hierarchyGroup']
-            newData['codeName'] = codeData['codeName']
-            newData['sentences'] = sentenceHolder
-            newData['billable'] = billable
-            if len(typeExcludesHolder) > 0:
-                newData['typeExcludes'] = typeExcludesHolder
+                newData['code'] = code['hierarchyGroup']
+                if 'hierarchy' in codeData:
+                    newData['hierarchy'] = codeData['hierarchy']
+                #Every code's data does not include a code name.
+                if 'codeName' in codeData:
+                    newData['codeName'] = codeData['codeName']
+                if 'codeIdentifier' in codeData:
+                    newData['codeIdentifier'] = codeData['codeIdentifier']
+                newData['sentences'] = sentenceHolder
+                if billable != None:
+                    newData['billable'] = billable
+                if len(typeExcludesHolder) > 0:
+                    newData['typeExcludes'] = typeExcludesHolder
 
             return newData
 
