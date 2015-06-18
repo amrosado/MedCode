@@ -54,24 +54,26 @@ class WikiMedIcdInfoExtend:
     def constructWikiInformationExtension(self):
         try:
             processedCodeCollection = self.icdDatabase.get_collection('processedDiagnosisCodes')
+            self.wikiMedInfoDatabase.drop_collection('wikiInfo')
             wikiInfoCollection = self.wikiMedInfoDatabase.get_collection('wikiInfo')
 
             processedCodeFullCursor = processedCodeCollection.find()
 
             for code in processedCodeFullCursor:
                 codeData = json.loads(code['data'])
-
-                urlSearch = self.wikiSearchUrl + codeData['codeName']
-                wikiRequest = self.wikiSession.get(urlSearch)
-                wikiHtmlSoup = BeautifulSoup(wikiRequest.content)
-                data = self.processWikiInformationHtml(wikiHtmlSoup)
-
-                findWikiInfo = wikiInfoCollection.find_one({'code': codeData['data']})
+                findWikiInfo = wikiInfoCollection.find_one({'code': codeData['code']})
                 if findWikiInfo == None:
-                    dump = json.dumps(data)
-                    if codeData != None:
-                        wikiInfoCollection.insert({'code': codeData['code'], 'data': dump, 'codeName': codeData['codeName']})
-                        pass
+                    if 'codeName' in codeData:
+                        urlSearch = self.wikiSearchUrl + codeData['codeName']
+                        wikiRequest = self.wikiSession.get(urlSearch)
+                        wikiHtmlSoup = BeautifulSoup(wikiRequest.content)
+                        data = self.processWikiInformationHtml(wikiHtmlSoup)
+                        dump = json.dumps(data)
+                        if data != None:
+                            if 'codeName' in codeData:
+                                wikiInfoCollection.insert({'code': codeData['code'], 'data': dump, 'codeName': codeData['codeName']})
+                            else:
+                                wikiInfoCollection.insert({'code': codeData['code'], 'data': dump})
         except:
             'Failed to extend medical code information from wikipedia data'
 
