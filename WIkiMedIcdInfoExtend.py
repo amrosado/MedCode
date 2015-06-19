@@ -7,15 +7,20 @@ import html5lib
 import types
 from bs4 import NavigableString, Tag
 from MedNaturalLanguageProcessing import MedNaturalLanguageProcessing
+from MedRequests import MedRequests
 from bs4 import BeautifulSoup
 
 class WikiMedIcdInfoExtend:
     wikiSession = None
     mongoClient = None
+
     icdDatabase = None
     wikiMedInfoDatabase = None
 
+    requestContentDatabase = None
+
     medNLP = None
+    medRequests = None
 
     wikiSearchUrl = 'https://en.wikipedia.org?search='
     wikiBaseUrl = 'https://en.wikipedia.org/'
@@ -59,21 +64,23 @@ class WikiMedIcdInfoExtend:
 
             processedCodeFullCursor = processedCodeCollection.find()
 
+            wikiData = {}
             for code in processedCodeFullCursor:
                 codeData = json.loads(code['data'])
                 findWikiInfo = wikiInfoCollection.find_one({'code': codeData['code']})
                 if findWikiInfo == None:
                     if 'codeName' in codeData:
-                        urlSearch = self.wikiSearchUrl + codeData['codeName']
-                        wikiRequest = self.wikiSession.get(urlSearch)
-                        wikiHtmlSoup = BeautifulSoup(wikiRequest.content)
-                        data = self.processWikiInformationHtml(wikiHtmlSoup)
-                        dump = json.dumps(data)
-                        if data != None:
-                            if 'codeName' in codeData:
-                                wikiInfoCollection.insert({'code': codeData['code'], 'data': dump, 'codeName': codeData['codeName']})
-                            else:
-                                wikiInfoCollection.insert({'code': codeData['code'], 'data': dump})
+                        wikiSearchTerms = self.medNLP.buildCodeWikiSesarch(codeData['code'], codeData=codeData)
+                        for searchTerm in wikiSearchTerms['searchWords']:
+                            queryParams = {'search': searchTerm}
+                            wikiMedRequestContent = self.medRequests.getSessionRequest(self.wikiBaseUrl, queryParams)
+                            wikiHtmlSoup = BeautifulSoup(wikiMedRequestContent)
+                            searchTermData = self.processWikiInformationHtml(wikiHtmlSoup)
+                            #dump = json.dumps(data)
+                            if searchTermData != None:
+                                wikiData[searchTerm] = searchTermData
+                        wikiInfoCollection.insert({'code': codeData['code'], 'searchTerms': json.dumps(wikiSearchTerms), 'data': json.dumps(wikiData), 'codeName': codeData['codeName']})
+                        wikiData = {}
         except:
             'Failed to extend medical code information from wikipedia data'
 
@@ -158,7 +165,11 @@ class WikiMedIcdInfoExtend:
                         sectionLinkHolder = []
                         imageLinkHolder = []
                         sectionTextHolder = []
-                        sectionData['sectionName'] = contentChild.text
+                        sectionTitleSpan = contentChild.find('span', 'mv-headline')
+                        if sectionTitleSpan != None:
+                            sectionData['sectionName'] = sectionTitleSpan.text
+                        else:
+                            sectionData['sectionName'] = contentChild.text
                     elif contentChild.name == 'div':
                         imageLinks = contentChild.find_all('a', 'image')
                         articleLinks = contentChild.find_all('a', 'hatnote')
@@ -201,9 +212,11 @@ class WikiMedIcdInfoExtend:
             self.mongoClient = pymongo.MongoClient('localhost', 27017)
             self.icdDatabase = self.mongoClient.get_database('Icd10')
             self.wikiMedInfoDatabase = self.mongoClient.get_database('WikiMedInfo')
-            self.medNLP = MedNaturalLanguageProcessing(self.mongoClient)
+            #self.requestContentDatabase = self.mongoClient.get_database('RequestContent')
+            self.medNLP = MedNaturalLanguageProcessing()
+            self.medRequests = MedRequests()
         except:
-            print('Failed to initalize mongodb database connection')
+            print('Failed to initialize mongodb database connection')
 
 wikiExtend = WikiMedIcdInfoExtend()
 #wikiExtend.reprocessIcdCodes()

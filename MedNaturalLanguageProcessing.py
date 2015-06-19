@@ -11,9 +11,27 @@ class MedNaturalLanguageProcessing:
     wikiMedInfoDb = None
     icdDb = None
 
+    def buildCodeWikiSesarch(self, code, codeData):
+        searchData = {}
+        searchWordHolder = []
+
+        codeNameWordsRe = re.compile('\w+')
+
+        excludedWordsList = ['and', 'fevers']
+
+        codeNameWordsFindAll = codeNameWordsRe.findall(codeData['codeName'])
+
+        for word in codeNameWordsFindAll:
+            if word not in excludedWordsList:
+                searchWordHolder.append(word)
+
+        searchData['searchWords'] = searchWordHolder
+        return searchData
+
     def breakdownCodeData(self, code, codeData):
         newData = {}
         billable = None
+
         notbillableRe = re.compile('(?<=(not[\s]a))[\s](billable)')
         billableRe = re.compile('(?<!(not[\s]a))[\s](billable)')
 
@@ -113,9 +131,9 @@ class MedNaturalLanguageProcessing:
         if wikiData != None:
             pass
 
-    def __init__(self, mongoClient):
+    def __init__(self):
         try:
-            self.mongoClient = mongoClient
+            self.mongoClient = pymongo.MongoClient('localhost', 27017)
             self.naturalLanguageDb = self.mongoClient.get_database('MedNLP')
             self.icdDb = self.mongoClient.get_database('Icd10')
             self.wikiMedInfoDb = self.mongoClient.get_database('WikiMedInfo')
