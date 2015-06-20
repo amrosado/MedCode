@@ -94,8 +94,12 @@ class WikiMedIcdInfoExtend:
         lastModified = htmlSoup.find('li', id='footer-info-lastmod')
         data = {}
         sectionData = {}
+        subSectionData = None
         sectionTextHolder = []
         sectionLinkHolder = []
+        subSectionTextHolder = []
+        subSectionLinkHolder = []
+        subSectionDataHolder = []
         imageLinkHolder = []
         sectionDataHolder = []
         referenceHolder = []
@@ -154,8 +158,19 @@ class WikiMedIcdInfoExtend:
             for contentChild in mainContentChildren:
                 if type(contentChild) is Tag:
                     if contentChild.name == 'h2':
-                        sectionData['text'] = sectionTextHolder
-                        sectionData['links'] = sectionLinkHolder
+                        if subSectionData != None:
+                            if len(subSectionTextHolder) > 0:
+                                subSectionData['text'] = subSectionTextHolder
+                            if len(subSectionLinkHolder) > 0:
+                                subSectionData['links'] = subSectionLinkHolder
+                            subSectionDataHolder.append(subSectionData)
+                            sectionData['subSectionData'] = subSectionDataHolder
+                        subSectionDataHolder = []
+                        subSectionData = None
+                        if len(sectionTextHolder) > 0:
+                            sectionData['text'] = sectionTextHolder
+                        if len(sectionLinkHolder) > 0:
+                            sectionData['links'] = sectionLinkHolder
                         if len(sectionLinkHolder) > 0:
                             sectionData['links'] = sectionLinkHolder
                         if len(imageLinkHolder) > 0:
@@ -165,9 +180,9 @@ class WikiMedIcdInfoExtend:
                         sectionLinkHolder = []
                         imageLinkHolder = []
                         sectionTextHolder = []
-                        sectionTitleSpan = contentChild.find('span', 'mv-headline')
-                        if sectionTitleSpan != None:
-                            sectionData['sectionName'] = sectionTitleSpan.text
+                        sectionHeader = contentChild.find('span', 'mw-headline')
+                        if sectionHeader != None:
+                            sectionData['sectionName'] = sectionHeader.text
                         else:
                             sectionData['sectionName'] = contentChild.text
                     elif contentChild.name == 'div':
@@ -193,15 +208,115 @@ class WikiMedIcdInfoExtend:
                                 sectionLinkHolder.append([articleLink['title'], articleLink['href']])
                     elif contentChild.name == 'p':
                         contentLinks = contentChild.find_all('a')
-                        if contentLinks != None:
-                            for link in contentLinks:
-                                sectionLinkHolder.append([link.text, link['href']])
-                        sectionTextHolder.append(contentChild.get_text())
+                        if subSectionData != None:
+                            if contentLinks != None:
+                                for link in contentLinks:
+                                    subSectionLinkHolder.append([link.text, link['href']])
+                            subSectionTextHolder.append(contentChild.get_text())
+                        else:
+                            if contentLinks != None:
+                                for link in contentLinks:
+                                    sectionLinkHolder.append([link.text, link['href']])
+                            sectionTextHolder.append(contentChild.get_text())
+                    elif contentChild.name == 'h3':
+                        if subSectionData != None:
+                            if len(subSectionLinkHolder) > 0:
+                                subSectionData['links'] = subSectionLinkHolder
+                            if len(subSectionTextHolder) > 0:
+                                subSectionData['text'] = subSectionTextHolder
+                            subSectionDataHolder.append(subSectionData)
+                        subSectionData = {}
+                        subSectionLinkHolder = []
+                        subSectionTextHolder = []
+                        subSectionHeader = contentChild.find('span', 'mw-headline')
+                        if subSectionHeader != None:
+                            subSectionData['subSectionName'] = subSectionHeader.get_text()
+                        else:
+                            subSectionData['subSectionName'] = contentChild.get_text()
+                    elif contentChild.name == 'ul':
+                        if subSectionData != None:
+                            subSectionData['listData'] = self.listHandler(contentChild)
+                        else:
+                            sectionData['listData'] = self.listHandler(contentChild)
+                    elif contentChild.name == 'dl':
+                        sectionData['defListData'] = self.defListHandler(contentChild)
             data['sectionData'] = sectionDataHolder
             data['referenceInfo'] = referenceHolder
             data['infoBoxes'] = infoBoxHolder
 
             return data
+
+    def defListHandler(self, defListSoup):
+        defListData = {}
+        defListLists = defListSoup.find_all('ul')
+
+        defListElements = defListSoup.find_all('dd')
+        contentLinks = defListSoup.find_all('a')
+        defListLinkHolder = []
+        defListDataHolder = []
+        subDefListHolder = []
+        defListListsHolder = []
+
+        if contentLinks != None:
+            for link in contentLinks:
+                defListLinkHolder.append([link.text, link['href']])
+
+        for listElement in defListElements:
+            subDefLists = defListSoup.find_all('dl')
+            defListData = {}
+            defListData['text'] = listElement.get_text()
+            subLists = listElement.find_all('ul')
+            for subDefList in subDefLists:
+                subDefListHolder.append(self.defListHandler(subDefList))
+            for subList in subLists:
+                defListListsHolder.append(self.listHandler(subList))
+            if len(subDefListHolder) > 0:
+                defListData['subDefList'] = subDefListHolder
+            if len(defListListsHolder) > 0:
+                defListData['defListLists'] = defListListsHolder
+            defListDataHolder.append(defListData)
+
+        for list in defListLists:
+            defListListsHolder.append(self.listHandler(list))
+
+        if len(defListLinkHolder) > 0:
+            defListData['defListLinks'] = defListLinkHolder
+        if len(defListDataHolder) > 0:
+            defListData['defListData'] = defListDataHolder
+        if len(defListListsHolder) > 0:
+            defListData['defListLists'] = defListListsHolder
+
+        return defListData
+
+    def listHandler(self, listSoup):
+        listData = {}
+
+        listElements = listSoup.find_all('li')
+        contentLinks = listSoup.find_all('a')
+        listLinkHolder = []
+        listDataHolder = []
+        subListHolder = []
+
+        if contentLinks != None:
+            for link in contentLinks:
+                listLinkHolder.append([link.text, link['href']])
+
+        for listElement in listElements:
+            listData = {}
+            listData['text'] = listElement.get_text()
+            subLists = listElement.find_all('ul')
+            for subList in subLists:
+                subListHolder.append(self.listHandler(subList))
+            if len(subListHolder) > 0:
+                listData['subList'] = subListHolder
+            listDataHolder.append(listData)
+
+        if len(listLinkHolder) > 0:
+            listData['listLinks'] = listLinkHolder
+        if len(listDataHolder) > 0:
+            listData['listData'] = listDataHolder
+
+        return listData
 
     def processWikiSearchHtml(self, htmlSoup):
         htmlSoup
