@@ -87,12 +87,47 @@ class WikiMedIcdInfoExtend:
     def analyzeCodeInformation(self, code):
         pass
 
-    def processWikiInformationHtml(self, htmlSoup):
-        wikiInfos = htmlSoup.find_all('table', 'infobox')
-        contentText = htmlSoup.find('div', id='mw-content-text')
-        pageTitle = htmlSoup.find('h1', id='firstHeading')
-        lastModified = htmlSoup.find('li', id='footer-info-lastmod')
+    def handleWikiInfoBoxes(self, wikiInfoSoup):
+
+        infoBox = {}
+        wikiInfoTbodies = wikiInfoSoup.find_all('tbody')
+        rowHolder = []
+        for wikiInfoTBody in wikiInfoTbodies:
+            wikiInfoChildren = wikiInfoTBody.children
+            for wikiInfoChild in wikiInfoChildren:
+                if type(wikiInfoChild) == Tag:
+                    if 'title' not in infoBox:
+                        infoBox['title'] = wikiInfoChild.get_text()
+                    else:
+                        row = {}
+                        wikiInfoChildChildren = wikiInfoChild.children
+                        for wikiInfoChildChild in wikiInfoChildChildren:
+                            if type(wikiInfoChildChild) == Tag:
+                                infoImage = wikiInfoChildChild.find('img')
+                                infoLink = wikiInfoChildChild.find('a')
+                                if 'style' not in wikiInfoChildChild.attrs:
+                                    info = wikiInfoChildChild.get_text()
+                                    if infoLink != None:
+                                        row['data'] = [info, infoLink['href']]
+                                    else:
+                                        row['data'] = [info]
+                                elif 'text-align:center' in wikiInfoChildChild.attrs['style']:
+                                    infoText = wikiInfoChildChild.get_text()
+                                    if infoLink != None:
+                                        row['description'] = [infoText, infoLink['href']]
+                                    else:
+                                        row['description'] = [infoText]
+                                elif 'text-align:left' in wikiInfoChildChild.attrs['style']:
+                                    infoName = wikiInfoChildChild.get_text()
+                                    if infoLink != None:
+                                        row['name'] = [infoName, infoLink['href']]
+                        rowHolder.append(row)
+            infoBox['data'] = rowHolder
+        return infoBox
+
+    def handleWikiContentChildren(self, contentSoupChildren):
         data = {}
+
         sectionData = {}
         subSectionData = None
         sectionTextHolder = []
@@ -104,6 +139,104 @@ class WikiMedIcdInfoExtend:
         sectionDataHolder = []
         referenceHolder = []
 
+        sectionData['sectionName'] = 'summary'
+        for contentChild in contentSoupChildren:
+            if type(contentChild) is Tag:
+                if contentChild.name == 'h2':
+                    if subSectionData != None:
+                        if len(subSectionTextHolder) > 0:
+                            subSectionData['text'] = subSectionTextHolder
+                        if len(subSectionLinkHolder) > 0:
+                            subSectionData['links'] = subSectionLinkHolder
+                        subSectionDataHolder.append(subSectionData)
+                        sectionData['subSectionData'] = subSectionDataHolder
+                        subSectionDataHolder = []
+                        subSectionData = None
+                    if len(sectionTextHolder) > 0:
+                        sectionData['text'] = sectionTextHolder
+                    if len(sectionLinkHolder) > 0:
+                        sectionData['links'] = sectionLinkHolder
+                    if len(sectionLinkHolder) > 0:
+                        sectionData['links'] = sectionLinkHolder
+                    if len(imageLinkHolder) > 0:
+                        sectionData['imageLinks'] = imageLinkHolder
+                    sectionDataHolder.append(sectionData)
+                    sectionData = {}
+                    sectionLinkHolder = []
+                    imageLinkHolder = []
+                    sectionTextHolder = []
+                    sectionHeader = contentChild.find('span', 'mw-headline')
+                    if sectionHeader != None:
+                        sectionData['sectionName'] = sectionHeader.text
+                    else:
+                        sectionData['sectionName'] = contentChild.text
+                elif contentChild.name == 'div':
+                    imageLinks = contentChild.find_all('a', 'image')
+                    articleLinks = contentChild.find_all('a', 'hatnote')
+                    referenceSpans = contentChild.find_all('span', 'reference-text')
+                    if referenceSpans != None:
+                        for referenceSpan in referenceSpans:
+                            referenceLinks = referenceSpan.find_all('a')
+                            if referenceLinks != None:
+                                referenceText = referenceSpan.get_text()
+                                referenceLinkHolder = []
+                                for referenceLink in referenceLinks:
+                                    referenceLinkHolder.append([referenceText, referenceLink.text, referenceLink['href']])
+                                referenceHolder.append({'text': referenceText, 'links': referenceLinkHolder})
+                            else:
+                                referenceHolder.append([referenceText])
+                    if imageLinks != None:
+                        for imageLink in imageLinks:
+                            imageLinkHolder.append(imageLink['href'])
+                    if articleLinks != None:
+                        for articleLink in articleLinks:
+                            sectionLinkHolder.append([articleLink['title'], articleLink['href']])
+                elif contentChild.name == 'p':
+                    contentLinks = contentChild.find_all('a')
+                    if subSectionData != None:
+                        if contentLinks != None:
+                            for link in contentLinks:
+                                subSectionLinkHolder.append([link.text, link['href']])
+                        subSectionTextHolder.append(contentChild.get_text())
+                    else:
+                        if contentLinks != None:
+                            for link in contentLinks:
+                                sectionLinkHolder.append([link.text, link['href']])
+                        sectionTextHolder.append(contentChild.get_text())
+                elif contentChild.name == 'h3':
+                    if subSectionData != None:
+                        if len(subSectionLinkHolder) > 0:
+                            subSectionData['links'] = subSectionLinkHolder
+                        if len(subSectionTextHolder) > 0:
+                            subSectionData['text'] = subSectionTextHolder
+                        subSectionDataHolder.append(subSectionData)
+                    subSectionData = {}
+                    subSectionLinkHolder = []
+                    subSectionTextHolder = []
+                    subSectionHeader = contentChild.find('span', 'mw-headline')
+                    if subSectionHeader != None:
+                        subSectionData['subSectionName'] = subSectionHeader.get_text()
+                    else:
+                        subSectionData['subSectionName'] = contentChild.get_text()
+                elif contentChild.name == 'ul':
+                    if subSectionData != None:
+                        subSectionData['listData'] = self.listHandler(contentChild)
+                    else:
+                        sectionData['listData'] = self.listHandler(contentChild)
+                elif contentChild.name == 'dl':
+                    sectionData['defListData'] = self.defListHandler(contentChild)
+        data['sectionData'] = sectionDataHolder
+        data['referenceInfo'] = referenceHolder
+
+        return data
+
+    def processWikiInformationHtml(self, htmlSoup):
+        wikiInfos = htmlSoup.find_all('table', 'infobox')
+        contentText = htmlSoup.find('div', id='mw-content-text')
+        pageTitle = htmlSoup.find('h1', id='firstHeading')
+        lastModified = htmlSoup.find('li', id='footer-info-lastmod')
+        data = {}
+
         infoBoxHolder = []
 
         if len(wikiInfos) == 0:
@@ -114,142 +247,23 @@ class WikiMedIcdInfoExtend:
 
         if wikiInfos != None:
             for wikiInfo in wikiInfos:
-                infoBox = {}
-                wikiInfoTbodies = wikiInfo.find_all('tbody')
-                rowHolder = []
-                for wikiInfoTBody in wikiInfoTbodies:
-                    wikiInfoChildren = wikiInfoTBody.children
-                    for wikiInfoChild in wikiInfoChildren:
-                        if type(wikiInfoChild) == Tag:
-                            if 'title' not in infoBox:
-                                infoBox['title'] = wikiInfoChild.get_text()
-                            else:
-                                row = {}
-                                wikiInfoChildChildren = wikiInfoChild.children
-                                for wikiInfoChildChild in wikiInfoChildChildren:
-                                    if type(wikiInfoChildChild) == Tag:
-                                        infoImage = wikiInfoChildChild.find('img')
-                                        infoLink = wikiInfoChildChild.find('a')
-                                        if 'style' not in wikiInfoChildChild.attrs:
-                                            info = wikiInfoChildChild.get_text()
-                                            if infoLink != None:
-                                                row['data'] = [info, infoLink['href']]
-                                            else:
-                                                row['data'] = [info]
-                                        elif 'text-align:center' in wikiInfoChildChild.attrs['style']:
-                                            infoText = wikiInfoChildChild.get_text()
-                                            if infoLink != None:
-                                                row['description'] = [infoText, infoLink['href']]
-                                            else:
-                                                row['description'] = [infoText]
-                                        elif 'text-align:left' in wikiInfoChildChild.attrs['style']:
-                                            infoName = wikiInfoChildChild.get_text()
-                                            if infoLink != None:
-                                                row['name'] = [infoName, infoLink['href']]
-                                rowHolder.append(row)
-                    infoBox['data'] = rowHolder
-                    infoBoxHolder.append(infoBox)
-                    infoBox = {}
+                wikiInfoData = self.handleWikiInfoBoxes(wikiInfo)
+                infoBoxHolder.append(wikiInfoData)
+
+        data['title'] = pageTitle.text
 
         if contentText != None:
             mainContentChildren = contentText.children
-            data['title'] = pageTitle.text
-            sectionData['sectionName'] = 'summary'
-            for contentChild in mainContentChildren:
-                if type(contentChild) is Tag:
-                    if contentChild.name == 'h2':
-                        if subSectionData != None:
-                            if len(subSectionTextHolder) > 0:
-                                subSectionData['text'] = subSectionTextHolder
-                            if len(subSectionLinkHolder) > 0:
-                                subSectionData['links'] = subSectionLinkHolder
-                            subSectionDataHolder.append(subSectionData)
-                            sectionData['subSectionData'] = subSectionDataHolder
-                        subSectionDataHolder = []
-                        subSectionData = None
-                        if len(sectionTextHolder) > 0:
-                            sectionData['text'] = sectionTextHolder
-                        if len(sectionLinkHolder) > 0:
-                            sectionData['links'] = sectionLinkHolder
-                        if len(sectionLinkHolder) > 0:
-                            sectionData['links'] = sectionLinkHolder
-                        if len(imageLinkHolder) > 0:
-                            sectionData['imageLinks'] = imageLinkHolder
-                        sectionDataHolder.append(sectionData)
-                        sectionData = {}
-                        sectionLinkHolder = []
-                        imageLinkHolder = []
-                        sectionTextHolder = []
-                        sectionHeader = contentChild.find('span', 'mw-headline')
-                        if sectionHeader != None:
-                            sectionData['sectionName'] = sectionHeader.text
-                        else:
-                            sectionData['sectionName'] = contentChild.text
-                    elif contentChild.name == 'div':
-                        imageLinks = contentChild.find_all('a', 'image')
-                        articleLinks = contentChild.find_all('a', 'hatnote')
-                        referenceSpans = contentChild.find_all('span', 'reference-text')
-                        if referenceSpans != None:
-                            for referenceSpan in referenceSpans:
-                                referenceLinks = referenceSpan.find_all('a')
-                                if referenceLinks != None:
-                                    referenceText = referenceSpan.get_text()
-                                    referenceLinkHolder = []
-                                    for referenceLink in referenceLinks:
-                                        referenceLinkHolder.append([referenceText, referenceLink.text, referenceLink['href']])
-                                    referenceHolder.append({'text': referenceText, 'links': referenceLinkHolder})
-                                else:
-                                    referenceHolder.append([referenceText])
-                        if imageLinks != None:
-                            for imageLink in imageLinks:
-                                imageLinkHolder.append(imageLink['href'])
-                        if articleLinks != None:
-                            for articleLink in articleLinks:
-                                sectionLinkHolder.append([articleLink['title'], articleLink['href']])
-                    elif contentChild.name == 'p':
-                        contentLinks = contentChild.find_all('a')
-                        if subSectionData != None:
-                            if contentLinks != None:
-                                for link in contentLinks:
-                                    subSectionLinkHolder.append([link.text, link['href']])
-                            subSectionTextHolder.append(contentChild.get_text())
-                        else:
-                            if contentLinks != None:
-                                for link in contentLinks:
-                                    sectionLinkHolder.append([link.text, link['href']])
-                            sectionTextHolder.append(contentChild.get_text())
-                    elif contentChild.name == 'h3':
-                        if subSectionData != None:
-                            if len(subSectionLinkHolder) > 0:
-                                subSectionData['links'] = subSectionLinkHolder
-                            if len(subSectionTextHolder) > 0:
-                                subSectionData['text'] = subSectionTextHolder
-                            subSectionDataHolder.append(subSectionData)
-                        subSectionData = {}
-                        subSectionLinkHolder = []
-                        subSectionTextHolder = []
-                        subSectionHeader = contentChild.find('span', 'mw-headline')
-                        if subSectionHeader != None:
-                            subSectionData['subSectionName'] = subSectionHeader.get_text()
-                        else:
-                            subSectionData['subSectionName'] = contentChild.get_text()
-                    elif contentChild.name == 'ul':
-                        if subSectionData != None:
-                            subSectionData['listData'] = self.listHandler(contentChild)
-                        else:
-                            sectionData['listData'] = self.listHandler(contentChild)
-                    elif contentChild.name == 'dl':
-                        sectionData['defListData'] = self.defListHandler(contentChild)
-            data['sectionData'] = sectionDataHolder
-            data['referenceInfo'] = referenceHolder
-            data['infoBoxes'] = infoBoxHolder
+            subData = self.handleWikiContentChildren(mainContentChildren)
 
-            return data
+        data['infoBoxes'] = infoBoxHolder
+        data['sectionData'] = subData['sectionData']
+        data['referenceInfo'] = subData['referenceInfo']
+
+        return data
 
     def defListHandler(self, defListSoup):
         defListData = {}
-        defListLists = defListSoup.find_all('ul')
-
         defListElements = defListSoup.find_all('dd')
         contentLinks = defListSoup.find_all('a')
         defListLinkHolder = []
@@ -263,28 +277,27 @@ class WikiMedIcdInfoExtend:
 
         for listElement in defListElements:
             subDefLists = defListSoup.find_all('dl')
-            defListData = {}
-            defListData['text'] = listElement.get_text()
+
+            data = {}
+            data['text'] = listElement.get_text()
             subLists = listElement.find_all('ul')
             for subDefList in subDefLists:
                 subDefListHolder.append(self.defListHandler(subDefList))
             for subList in subLists:
                 defListListsHolder.append(self.listHandler(subList))
             if len(subDefListHolder) > 0:
-                defListData['subDefList'] = subDefListHolder
+                data['subDefList'] = subDefListHolder
             if len(defListListsHolder) > 0:
-                defListData['defListLists'] = defListListsHolder
-            defListDataHolder.append(defListData)
+                data['defListLists'] = defListListsHolder
+            defListDataHolder.append(data)
 
-        for list in defListLists:
-            defListListsHolder.append(self.listHandler(list))
+        # for list in defListLists:
+        #     defListListsHolder.append(self.listHandler(list))
 
         if len(defListLinkHolder) > 0:
-            defListData['defListLinks'] = defListLinkHolder
+            defListData['links'] = defListLinkHolder
         if len(defListDataHolder) > 0:
-            defListData['defListData'] = defListDataHolder
-        if len(defListListsHolder) > 0:
-            defListData['defListLists'] = defListListsHolder
+            defListData['data'] = defListDataHolder
 
         return defListData
 
@@ -302,19 +315,19 @@ class WikiMedIcdInfoExtend:
                 listLinkHolder.append([link.text, link['href']])
 
         for listElement in listElements:
-            listData = {}
-            listData['text'] = listElement.get_text()
+            data = {}
+            data['text'] = listElement.get_text()
             subLists = listElement.find_all('ul')
             for subList in subLists:
                 subListHolder.append(self.listHandler(subList))
             if len(subListHolder) > 0:
-                listData['subList'] = subListHolder
-            listDataHolder.append(listData)
+                data['subLists'] = subListHolder
+            listDataHolder.append(data)
 
         if len(listLinkHolder) > 0:
-            listData['listLinks'] = listLinkHolder
+            listData['links'] = listLinkHolder
         if len(listDataHolder) > 0:
-            listData['listData'] = listDataHolder
+            listData['data'] = listDataHolder
 
         return listData
 
