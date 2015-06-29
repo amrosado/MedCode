@@ -56,73 +56,221 @@ class WikiMedIcdInfoExtend:
         except:
             print('Failed to reprocess ICD 10 code information')
 
+    def processWikiSearchInformation(self, searchTerm):
+        self.wikiMedInfoDatabase.drop_collection('wikiSearchTerms')
+        wikiSearchTermCollection = self.wikiMedInfoDatabase.get_collection('wikiSearchTerms')
+        wikiSearchTermQuery = wikiSearchTermCollection.find_one({'searchTerm': searchTerm})
+
+        if wikiSearchTermQuery == None:
+            queryParams = {'search': searchTerm}
+            wikiMedRequestContent = self.medRequests.getSessionRequest(self.wikiBaseUrl, queryParams)
+            wikiHtmlSoup = BeautifulSoup(wikiMedRequestContent)
+            searchTermData = self.processWikiInformationHtml(wikiHtmlSoup)
+
+            dump = json.dumps(searchTermData)
+            wikiSearchTermCollection.insert_one({'searchTerm': searchTerm, 'data': dump})
+            #self.updateSearchTermAssociations(searchTerm)
+
+            if 'sectionData' in searchTermData:
+                for section in searchTermData['sectionData']:
+                    if 'links' in section:
+                        for link in section['links']:
+                            if link[1][0] != '#':
+                                linkWikiUrl = self.wikiBaseUrl+link[1][1:len(link[1])]
+                                wikiLinkContent = self.medRequests.getSessionRequest(linkWikiUrl, None)
+                                wikiLinkHtmlSoup = BeautifulSoup(wikiLinkContent)
+                                wikiLinkData = self.processWikiInformationHtml(wikiLinkHtmlSoup)
+                                pass
+
+            return searchTermData
+
+        else:
+            searchTermData = json.loads(wikiSearchTermQuery['data'])
+            return searchTermData
+
+    def updateSearchTermAssociations(self, searchTerm):
+        #wikiSearchTermCollection = self.wikiMedInfoDatabase.get_collection('wikiSearchTerms')
+        wikiSearchTermAssociationsCollection = self.wikiMedInfoDatabase.get_collection('wikiSearchTermAssociations')
+
+        wikiSearchTermAssociationQuery = wikiSearchTermAssociationsCollection.find_one({'searchTerm': searchTerm})
+
+        if wikiSearchTermAssociationQuery == None:
+            searchTermAssociationData = {'searchTerm': searchTerm, 'associations': None, 'associationIds': None, 'associationCount': 0}
+            wikiSearchTermAssociationsCollection.insert_one(searchTermAssociationData)
+            wikiSearchTermAssociations = wikiSearchTermAssociationsCollection.find()
+            for searchTermAssociation in wikiSearchTermAssociations:
+                associations = searchTermAssociation['associations']
+                if associations != None:
+                    for association in associations:
+                        if association == searchTerm:
+                            if searchTermAssociationData['associations'] == None:
+                                searchTermAssociationData['associations'] = [searchTerm]
+                                searchTermAssociationData['associationCount'] += 1
+                                searchTermAssociationData['associationIds'] = [searchTermAssociation._id]
+                                updateResult = wikiSearchTermAssociationsCollection.update_one({'searchTerm': searchTerm}, searchTermAssociationData)
+                            else:
+                                searchTermAssociationData['associations'].append(searchTerm)
+                                searchTermAssociationData['associationIds'].append(searchTermAssociation._id)
+                                searchTermAssociationData['associationCount'] += 1
+                                updateResult = wikiSearchTermAssociationsCollection.update_one({'searchTerm': searchTerm}, searchTermAssociationData)
+                        else:
+                            self.updateSearchTermAssociations(association)
+        else:
+            searchTermAssociationData = {}
+            searchTermAssociationData['associations'] = wikiSearchTermAssociationQuery['associations']
+            searchTermAssociationData['associationIds'] = wikiSearchTermAssociationQuery['associationIds']
+            searchTermAssociationData['associationCount'] = wikiSearchTermAssociationQuery['associationCount']
+
+            if searchTermAssociationData['associations'] != None:
+                for association in searchTermAssociationData['associations']:
+                    updateAssociationQuery = wikiSearchTermAssociationsCollection.find_one({'searchTerm': association})
+                    if updateAssociationQuery != None:
+                        updateAssociationData = {'searchTerm': association}
+                        if updateAssociationQuery['associations'] == None:
+                            updateAssociationData['associations'] = [searchTerm]
+                            updateAssociationData['associationCount'] += 1
+                            updateAssociationData['associationIds'] = [updateAssociationQuery._id]
+                            updateResult = wikiSearchTermAssociationsCollection.update_one({'searchTerm': association}, updateAssociationData)
+                        else:
+                            updateAssociationData['associations'].append(searchTerm)
+                            updateAssociationData['associationIds'].append(updateAssociationQuery._id)
+                            updateAssociationData['associationCount'] += 1
+                            updateResult = wikiSearchTermAssociationsCollection.update_one({'searchTerm': association}, updateAssociationData)
+
     def constructWikiInformationExtension(self):
-        try:
-            processedCodeCollection = self.icdDatabase.get_collection('processedDiagnosisCodes')
-            self.wikiMedInfoDatabase.drop_collection('wikiInfo')
-            wikiInfoCollection = self.wikiMedInfoDatabase.get_collection('wikiInfo')
+        processedCodeCollection = self.icdDatabase.get_collection('processedDiagnosisCodes')
+        #self.wikiMedInfoDatabase.drop_collection('wikiInfo')
+        wikiSearchTermsCollection = self.wikiMedInfoDatabase.get_collection('wikiCodeAssociations')
 
-            processedCodeFullCursor = processedCodeCollection.find()
+        processedCodeFullCursor = processedCodeCollection.find()
 
-            wikiData = {}
-            for code in processedCodeFullCursor:
-                codeData = json.loads(code['data'])
-                findWikiInfo = wikiInfoCollection.find_one({'code': codeData['code']})
-                if findWikiInfo == None:
-                    if 'codeName' in codeData:
-                        wikiSearchTerms = self.medNLP.buildCodeWikiSesarch(codeData['code'], codeData=codeData)
-                        for searchTerm in wikiSearchTerms['searchWords']:
-                            queryParams = {'search': searchTerm}
-                            wikiMedRequestContent = self.medRequests.getSessionRequest(self.wikiBaseUrl, queryParams)
-                            wikiHtmlSoup = BeautifulSoup(wikiMedRequestContent)
-                            searchTermData = self.processWikiInformationHtml(wikiHtmlSoup)
-                            #dump = json.dumps(data)
-                            if searchTermData != None:
-                                wikiData[searchTerm] = searchTermData
-                        wikiInfoCollection.insert({'code': codeData['code'], 'searchTerms': json.dumps(wikiSearchTerms), 'data': json.dumps(wikiData), 'codeName': codeData['codeName']})
-                        wikiData = {}
-        except:
-            'Failed to extend medical code information from wikipedia data'
+        wikiData = {}
+        for code in processedCodeFullCursor:
+            codeData = json.loads(code['data'])
+            if 'codeName' in codeData:
+                wikiSearchTerms = self.medNLP.buildCodeWikiSesarch(codeData['code'], codeData=codeData)
+                for searchTerm in wikiSearchTerms['searchWords']:
+                    searchTerm = searchTerm.lower()
+                    searchTermData = self.processWikiSearchInformation(searchTerm)
+                    pass
 
     def analyzeCodeInformation(self, code):
         pass
 
     def handleWikiInfoBoxes(self, wikiInfoSoup):
 
-        infoBox = {}
         wikiInfoTbodies = wikiInfoSoup.find_all('tbody')
         rowHolder = []
+        infoBoxDataHolder = []
+        infoBox = {}
+
         for wikiInfoTBody in wikiInfoTbodies:
             wikiInfoChildren = wikiInfoTBody.children
+
+            data = None
             for wikiInfoChild in wikiInfoChildren:
                 if type(wikiInfoChild) == Tag:
                     if 'title' not in infoBox:
-                        infoBox['title'] = wikiInfoChild.get_text()
+                        title = wikiInfoChild.get_text()
+                        infoBox['title'] = title.strip('\n')
                     else:
-                        row = {}
                         wikiInfoChildChildren = wikiInfoChild.children
                         for wikiInfoChildChild in wikiInfoChildChildren:
                             if type(wikiInfoChildChild) == Tag:
-                                infoImage = wikiInfoChildChild.find('img')
-                                infoLink = wikiInfoChildChild.find('a')
+                                infoImages = wikiInfoChildChild.find_all('img')
+                                infoLinks = wikiInfoChildChild.find_all('a')
                                 if 'style' not in wikiInfoChildChild.attrs:
                                     info = wikiInfoChildChild.get_text()
-                                    if infoLink != None:
-                                        row['data'] = [info, infoLink['href']]
-                                    else:
-                                        row['data'] = [info]
-                                elif 'text-align:center' in wikiInfoChildChild.attrs['style']:
+                                    wikiInfoChildChilds = wikiInfoChild.children
+                                    tableRowCount = 0
+                                    tableData = False
+                                    for wikiInfoChildChd in wikiInfoChildChilds:
+                                        if wikiInfoChildChd.name == 'th':
+                                            tableRowCount += 1
+                                        if wikiInfoChildChd.name == 'td':
+                                            tableRowCount += 1
+                                    if tableRowCount > 1:
+                                        tableData = True
+                                    if tableData:
+                                        if 'th' == wikiInfoChildChild.name:
+                                            if 'data' in data:
+                                                data['data'].append([info.strip('\n:')])
+                                        if 'td' == wikiInfoChildChild.name:
+                                            if 'data' in data:
+                                                if len(data['data']) == 0:
+                                                    data['data'].append([info.strip('\n')])
+                                                elif (len(data['data'][len(data['data'])-1]) % tableRowCount) == 0:
+                                                    data['data'].append([info.strip('\n')])
+                                                else:
+                                                    data['data'][len(data['data'])-1].append(info.strip('\n:'))
+                                    elif 'data' in data:
+                                        data['data'].append(info.strip('\n:'))
+                                    if infoImages != None:
+                                        for image in infoImages:
+                                            data['images'].append([infoText.strip('\n'), image['src']])
+                                    if infoLinks != None:
+                                        for infoLink in infoLinks:
+                                            data['links'].append([infoLink.get_text(), infoLink['href']])
+                                elif ('text-align:center' in wikiInfoChildChild.attrs['style']) or ('text-align: center' in wikiInfoChildChild.attrs['style']):
                                     infoText = wikiInfoChildChild.get_text()
-                                    if infoLink != None:
-                                        row['description'] = [infoText, infoLink['href']]
-                                    else:
-                                        row['description'] = [infoText]
-                                elif 'text-align:left' in wikiInfoChildChild.attrs['style']:
+                                    wikiInfoChildChilds = wikiInfoChild.children
+                                    tableRowCount = 0
+                                    tableData = False
+                                    for wikiInfoChildChd in wikiInfoChildChilds:
+                                        if wikiInfoChildChd.name == 'th':
+                                            tableRowCount += 1
+                                        if wikiInfoChildChd.name == 'td':
+                                            tableRowCount += 1
+                                    if tableRowCount > 1:
+                                        tableData = True
+                                    if data == None:
+                                        data = {}
+                                        data['infoSectionName'] = 'head'
+                                        data['data'] = []
+                                        data['links'] = []
+                                        data['images'] = []
+                                    elif 'infoSectionName' not in data:
+                                        data['infoSectionName'] = infoText.strip('\n')
+                                    elif tableData:
+                                        if 'th' == wikiInfoChildChild.name:
+                                            data['data'].append([infoText.strip('\n:')])
+                                        if 'td' == wikiInfoChildChild.name:
+                                            data['data'][len(data['data'])-1].append(infoText.strip('\n'))
+                                    elif 'infoSectionName' in data:
+                                        if 'th' == wikiInfoChildChild.name:
+                                            if len(infoImages) > 0:
+                                                data['data'].append(infoText.strip('\n:'))
+                                            else:
+                                                infoBoxDataHolder.append(data)
+                                                data = {}
+                                                data['data'] = []
+                                                data['links'] = []
+                                                data['images'] = []
+                                                data['infoSectionName'] = infoText.strip('\n:')
+                                        if 'td' == wikiInfoChildChild:
+                                            data['data'].append(infoText.strip('\n'))
+                                    if infoImages != None:
+                                        for image in infoImages:
+                                            data['images'].append([infoText.strip('\n'), image['src']])
+                                    if infoLinks != None:
+                                        for infoLink in infoLinks:
+                                            data['links'].append([infoLink.get_text().strip('\n'), infoLink['href']])
+                                elif ('text-align:left' in wikiInfoChildChild.attrs['style']) or ('text-align: left' in wikiInfoChildChild.attrs['style']):
                                     infoName = wikiInfoChildChild.get_text()
-                                    if infoLink != None:
-                                        row['name'] = [infoName, infoLink['href']]
-                        rowHolder.append(row)
-            infoBox['data'] = rowHolder
+                                    if 'data' not in data:
+                                        data['data'] = []
+                                        data['data'].append([infoName.strip('\n')])
+                                    if 'data' in data:
+                                        data['data'].append(infoName.strip('\n'))
+                                    if infoImages != None:
+                                        for image in infoImages:
+                                            data['images'].append([infoText.strip('\n'), image['src']])
+                                    if infoLinks != None:
+                                        for infoLink in infoLinks:
+                                            data['links'].append([infoLink.get_text(), infoLink['href']])
+            if 'infoSectionName' in data:
+                infoBoxDataHolder.append(data)
+            infoBox['boxes'] = infoBoxDataHolder
         return infoBox
 
     def handleWikiContentChildren(self, contentSoupChildren):

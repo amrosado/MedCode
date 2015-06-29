@@ -14,9 +14,11 @@ class MedRequests:
     def getSessionRequest(self, url, queryDic):
         try:
             #self.requestsDb.drop_collection('wikiRequests')
-
-            encodedQuery = urlencode(queryDic)
-            parsedUrl = urlparse(url+'?'+encodedQuery)
+            if queryDic != None:
+                encodedQuery = urlencode(queryDic)
+                parsedUrl = urlparse(url+'?'+encodedQuery)
+            else:
+                parsedUrl = urlparse(url)
 
             if parsedUrl[1] == 'en.wikipedia.org':
                 requestCollection = self.requestsDb.get_collection('wikiRequests')
