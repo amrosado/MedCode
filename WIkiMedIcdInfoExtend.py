@@ -57,7 +57,8 @@ class WikiMedIcdInfoExtend:
             print('Failed to reprocess ICD 10 code information')
 
     def processWikiSearchInformation(self, searchTerm):
-        self.wikiMedInfoDatabase.drop_collection('wikiSearchTerms')
+        #self.wikiMedInfoDatabase.drop_collection('wikiSearchTerms')
+        #self.wikiMedInfoDatabase.drop_collection('wikiRequests')
         wikiSearchTermCollection = self.wikiMedInfoDatabase.get_collection('wikiSearchTerms')
         wikiSearchTermQuery = wikiSearchTermCollection.find_one({'searchTerm': searchTerm})
 
@@ -66,6 +67,7 @@ class WikiMedIcdInfoExtend:
             wikiMedRequestContent = self.medRequests.getSessionRequest(self.wikiBaseUrl, queryParams)
             wikiHtmlSoup = BeautifulSoup(wikiMedRequestContent)
             searchTermData = self.processWikiInformationHtml(wikiHtmlSoup)
+            searchTermDataBreakdown = self.medNLP.breakdownWikiData(searchTermData)
 
             dump = json.dumps(searchTermData)
             wikiSearchTermCollection.insert_one({'searchTerm': searchTerm, 'data': dump})
@@ -80,6 +82,8 @@ class WikiMedIcdInfoExtend:
                                 wikiLinkContent = self.medRequests.getSessionRequest(linkWikiUrl, None)
                                 wikiLinkHtmlSoup = BeautifulSoup(wikiLinkContent)
                                 wikiLinkData = self.processWikiInformationHtml(wikiLinkHtmlSoup)
+                                wikiLinkDataDump = json.dumps(wikiLinkData)
+                                wikiSearchTermCollection.insert_one({'searchTerm': link[1], 'data': wikiLinkDataDump})
                                 pass
 
             return searchTermData
@@ -157,121 +161,86 @@ class WikiMedIcdInfoExtend:
     def analyzeCodeInformation(self, code):
         pass
 
+    def processWikiTableBody(self, tBodySoup):
+        tableData = {}
+        tableSections = []
+        tableSection = {}
+        tableTitle = True
+        tableRows = tBodySoup.find_all('tr')
+        for tableRow in tableRows:
+            tableImages = tableRow.find_all('img')
+            tableLinks = tableRow.find_all('a')
+            tableHeadPresent = False
+            tableCellsPresent = False
+            tableListPresent = False
+
+            tableCellCount = 0
+            tableHeads = tableRow.find_all('th')
+            tableCells = tableRow.find_all('td')
+            for tableCell in tableCells:
+                tableCellCount += 1
+                tableCellsPresent = True
+                tableLists = tableCell.find('ul')
+                if tableLists != None:
+                    tableListPresent = True
+            for tableHead in tableHeads:
+                tableCellCount += 1
+                tableHeadPresent = True
+            if tableTitle:
+                tableData['title'] = tableHeads[0].get_text().strip('\n')
+                tableSection['sectionName'] = tableHeads[0].get_text().strip('\n')
+                tableTitle = False
+            elif tableHeadPresent and (tableCellCount == 1):
+                tableSections.append(tableSection)
+                tableSection = {}
+                tableSection['data'] = []
+                if tableHeads[0].get_text().strip('\n:') != '':
+                    tableSection['sectionName'] = tableHeads[0].get_text().strip('\n')
+            elif (tableCellCount > 1) and tableCellsPresent:
+                tableSection['data'].append([])
+                for tableHead in tableHeads:
+                    if tableHead.get_text().strip('\n:') != '':
+                        tableSection['data'][len(tableSection['data'])-1].append(tableHead.get_text().strip('\n:'))
+                for tableCell in tableCells:
+                    if tableCell.get_text().strip('\n:') != '':
+                        tableSection['data'][len(tableSection['data'])-1].append(tableCell.get_text().strip('\b:'))
+            else:
+                if 'data' not in tableSection:
+                    tableSection['data'] = []
+                for tableCell in tableCells:
+                    tableCellLists = tableCell.find_all('ul')
+                    if tableCellLists != None:
+                        for tableCellList in tableCellLists:
+                            tableSection['data'].append([])
+                            tableCellListElements = tableCellList.find_all('li')
+                            for tableCellListElement in tableCellListElements:
+                                tableSection['data'][len(tableSection['data'])-1].append(tableCellListElement.get_text().strip('\n'))
+                    elif tableCell.get_text().strip('\n:') != '':
+                        tableSection['data'].append(tableCell.get_text().strip('\n'))
+            if tableImages != None:
+                if 'images' not in tableSection:
+                    tableSection['images'] = []
+                for tableImage in tableImages:
+                    tableSection['images'].append([tableImage['alt'], tableImage['src']])
+            if tableLinks != None:
+                if 'links' not in tableSection:
+                    tableSection['links'] = []
+                for tableLink in tableLinks:
+                    tableSection['links'].append([tableLink.get_text('\n'), tableLink['href']])
+        tableSections.append(tableSection)
+        tableData['sections'] = tableSections
+
+        return tableData
+
     def handleWikiInfoBoxes(self, wikiInfoSoup):
 
         wikiInfoTbodies = wikiInfoSoup.find_all('tbody')
-        rowHolder = []
         infoBoxDataHolder = []
-        infoBox = {}
 
-        for wikiInfoTBody in wikiInfoTbodies:
-            wikiInfoChildren = wikiInfoTBody.children
+        for tableBody in wikiInfoTbodies:
+            infoBoxDataHolder.append(self.processWikiTableBody(tableBody))
 
-            data = None
-            for wikiInfoChild in wikiInfoChildren:
-                if type(wikiInfoChild) == Tag:
-                    if 'title' not in infoBox:
-                        title = wikiInfoChild.get_text()
-                        infoBox['title'] = title.strip('\n')
-                    else:
-                        wikiInfoChildChildren = wikiInfoChild.children
-                        for wikiInfoChildChild in wikiInfoChildChildren:
-                            if type(wikiInfoChildChild) == Tag:
-                                infoImages = wikiInfoChildChild.find_all('img')
-                                infoLinks = wikiInfoChildChild.find_all('a')
-                                if 'style' not in wikiInfoChildChild.attrs:
-                                    info = wikiInfoChildChild.get_text()
-                                    wikiInfoChildChilds = wikiInfoChild.children
-                                    tableRowCount = 0
-                                    tableData = False
-                                    for wikiInfoChildChd in wikiInfoChildChilds:
-                                        if wikiInfoChildChd.name == 'th':
-                                            tableRowCount += 1
-                                        if wikiInfoChildChd.name == 'td':
-                                            tableRowCount += 1
-                                    if tableRowCount > 1:
-                                        tableData = True
-                                    if tableData:
-                                        if 'th' == wikiInfoChildChild.name:
-                                            if 'data' in data:
-                                                data['data'].append([info.strip('\n:')])
-                                        if 'td' == wikiInfoChildChild.name:
-                                            if 'data' in data:
-                                                if len(data['data']) == 0:
-                                                    data['data'].append([info.strip('\n')])
-                                                elif (len(data['data'][len(data['data'])-1]) % tableRowCount) == 0:
-                                                    data['data'].append([info.strip('\n')])
-                                                else:
-                                                    data['data'][len(data['data'])-1].append(info.strip('\n:'))
-                                    elif 'data' in data:
-                                        data['data'].append(info.strip('\n:'))
-                                    if infoImages != None:
-                                        for image in infoImages:
-                                            data['images'].append([infoText.strip('\n'), image['src']])
-                                    if infoLinks != None:
-                                        for infoLink in infoLinks:
-                                            data['links'].append([infoLink.get_text(), infoLink['href']])
-                                elif ('text-align:center' in wikiInfoChildChild.attrs['style']) or ('text-align: center' in wikiInfoChildChild.attrs['style']):
-                                    infoText = wikiInfoChildChild.get_text()
-                                    wikiInfoChildChilds = wikiInfoChild.children
-                                    tableRowCount = 0
-                                    tableData = False
-                                    for wikiInfoChildChd in wikiInfoChildChilds:
-                                        if wikiInfoChildChd.name == 'th':
-                                            tableRowCount += 1
-                                        if wikiInfoChildChd.name == 'td':
-                                            tableRowCount += 1
-                                    if tableRowCount > 1:
-                                        tableData = True
-                                    if data == None:
-                                        data = {}
-                                        data['infoSectionName'] = 'head'
-                                        data['data'] = []
-                                        data['links'] = []
-                                        data['images'] = []
-                                    elif 'infoSectionName' not in data:
-                                        data['infoSectionName'] = infoText.strip('\n')
-                                    elif tableData:
-                                        if 'th' == wikiInfoChildChild.name:
-                                            data['data'].append([infoText.strip('\n:')])
-                                        if 'td' == wikiInfoChildChild.name:
-                                            data['data'][len(data['data'])-1].append(infoText.strip('\n'))
-                                    elif 'infoSectionName' in data:
-                                        if 'th' == wikiInfoChildChild.name:
-                                            if len(infoImages) > 0:
-                                                data['data'].append(infoText.strip('\n:'))
-                                            else:
-                                                infoBoxDataHolder.append(data)
-                                                data = {}
-                                                data['data'] = []
-                                                data['links'] = []
-                                                data['images'] = []
-                                                data['infoSectionName'] = infoText.strip('\n:')
-                                        if 'td' == wikiInfoChildChild:
-                                            data['data'].append(infoText.strip('\n'))
-                                    if infoImages != None:
-                                        for image in infoImages:
-                                            data['images'].append([infoText.strip('\n'), image['src']])
-                                    if infoLinks != None:
-                                        for infoLink in infoLinks:
-                                            data['links'].append([infoLink.get_text().strip('\n'), infoLink['href']])
-                                elif ('text-align:left' in wikiInfoChildChild.attrs['style']) or ('text-align: left' in wikiInfoChildChild.attrs['style']):
-                                    infoName = wikiInfoChildChild.get_text()
-                                    if 'data' not in data:
-                                        data['data'] = []
-                                        data['data'].append([infoName.strip('\n')])
-                                    if 'data' in data:
-                                        data['data'].append(infoName.strip('\n'))
-                                    if infoImages != None:
-                                        for image in infoImages:
-                                            data['images'].append([infoText.strip('\n'), image['src']])
-                                    if infoLinks != None:
-                                        for infoLink in infoLinks:
-                                            data['links'].append([infoLink.get_text(), infoLink['href']])
-            if 'infoSectionName' in data:
-                infoBoxDataHolder.append(data)
-            infoBox['boxes'] = infoBoxDataHolder
-        return infoBox
+        return infoBoxDataHolder
 
     def handleWikiContentChildren(self, contentSoupChildren):
         data = {}

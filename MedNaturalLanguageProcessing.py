@@ -129,7 +129,41 @@ class MedNaturalLanguageProcessing:
 
     def breakdownWikiData(self, wikiData):
         if wikiData != None:
+            wikiLastModifiedText = wikiData['lastModified']
+            wikiRefInfo = wikiData['referenceInfo']
+            wikiSectionData = wikiData['sectionData']
+            wikiTitle = wikiData['title']
+            wikiInfoBoxes = wikiData['infoBoxes']
+
+            for infoBox in wikiInfoBoxes:
+                infoBoxSections = infoBox['sections']
+                for infoBoxSection in infoBoxSections:
+                    infoBoxSectionName = infoBoxSection['sectionName']
+                    infoBoxSectionData = infoBoxSection['data']
+                    infoBoxSectionLinks = infoBoxSection['links']
+                    infoBoxSectionImages = infoBoxSection['images']
+                    pass
+
+            for ref in wikiRefInfo:
+                wikiRefText = ref['text']
+                wikiRefLinks = ref['links']
+                for link in wikiRefLinks:
+                    pass
+
+            for section in wikiData['sectionData']:
+                sectionLinks = section['links']
+                sectionText = section['text']
+                sectionName = section['sectionName']
+
+                if 'imageLinks' in section:
+                    sectionImageLinks = section['imageLinks']
+                    for link in sectionImageLinks:
+                        pass
+                if 'subSectionData' in section:
+                    subSectionData = section['subSectionData']
+                pass
             pass
+
 
     def __init__(self):
         try:
